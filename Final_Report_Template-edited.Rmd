@@ -1,0 +1,916 @@
+---
+title: 'FINAL PAPER: World Happiness'
+author: "STOR 320.01 Group 25"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+
+output:
+  html_document: default
+  pdf_document: 
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(formattable)
+library(dplyr)
+library(leaps)
+require(caTools)
+library(readr)
+library(reactable)
+library(reshape2)
+library(tidyr)
+library(modelr)
+library(ggplot2)
+library(plotly)
+library(ggExtra)
+
+# Import Data Below
+#main dataset
+world_happiness <-read_csv("2020.csv")
+#supplementary dataset containing latitude and longitude of countries
+location <- read_csv("loc_countries.csv")
+#supplementary dataset containing continents of each country
+continents <- read_csv("countryContinent.csv")
+median <- read_csv("medianhoushold.csv")
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#rename variables 
+
+world <- as_tibble(world_happiness)
+world <- world %>%
+  rename(
+    country = "Country name",
+    region = "Regional indicator",
+    ladder = "Ladder score",
+    logged_GDP = "Logged GDP per capita",
+    social_support = "Social support",
+    life_expectancy = "Healthy life expectancy",
+    freedom = "Freedom to make life choices",
+    generosity = "Generosity",
+    corruption = "Perceptions of corruption",
+  )
+
+world_data <- world %>% select('country', 'region','ladder','logged_GDP','social_support','life_expectancy','freedom','generosity','corruption')
+
+```
+
+# INTRODUCTION
+
+When looking at different countries around the world, many different and complex socioeconomic factors have contributed to varying levels of development. One would think that some of the most contributing factors to a country's well-being is GDP or its government. However, instead of measuring a country's development, can we instead measure its happiness? How can we measure something as subjective as happiness? The annual World Happiness Report seeks to answer this question, focusing on six different factors: logged GDP per capita, healthy life expectancy, perceptions of corruption, freedom to make life choices, social support, and generosity. This brings us to our first question of which of the aforementioned variables are the best predictors for a country's happiness score, or as the Gallup World Poll refers to it, the ladder score.
+  
+If we can find the answer to the above question it will enable countries that have a higher overall happiness score to know what to continue doing to maintain it, while countries with lower happiness scores can know what factors to focus on in the future to improve their overall happiness. This, in turn, can improve technology growth, educational advancements, quality of life, and most importantly happiness for their citizens. For example, governments can work towards creating laws and programs to increase those variables, or decide the order of importance for these variables so that they may efficiently delegate resources to invest in certain goals. The overall goal of a country should be to make its citizens as happy as possible. However, it's a very difficult decision to decide how to make this happen and where resources should be allocated. Finding out what are the most important predictors for happiness will aid in those decisions that affect thousands or millions of people. This is even more relevant given the COVID-19 pandemic, which has negatively affected happiness worldwide. Intuitively, many of these variables may correlate with each other, such as higher GDP associated with a higher life expectancy, but an analysis can thoroughly investigate and predict the effectiveness of these variables in regards to happiness. 
+  
+As we explored the dataset, we were interested in logged GDP per capita and its power to predict happiness. However, GDP per capita only gives an estimate about a country's overall economy and purchasing power. We wanted to scale down and look at median household income instead to answer an age-old question: can money buy happiness? More specifically, can money cause happiness? Having enough income to sustain basic survival needs is a given for improving happiness, but beyond that level we wanted to know, how does the level of household income affect the ladder score and can it  predict logged GDP per capita, life expectancy, and/or social support? We also wanted to dive into how the median household income differs based on region. Investigating median household income allows for exploration between how much the wealth of its citizens has an impact on happiness and other socioeconomic factors. Knowing this, we may have another way to predict happiness, which may prove to be more accurate than the predictors from the World Happiness Report. By analyzing the median household income of a country we are aiming to explore other factors so that we can do our best to find out what makes the people of a country happier so that we can put more smiles on faces across the world. 
+
+
+# DATA
+
+  Our data, titled, "World Happiness Report up to 2020" came from Kaggle, however, the original collectors of the data are a team of researchers, data scientists, and editors, with their base at the Sustainable Development Solutions Network (SDSN) and The Center for Sustainable Development at Columbia University, directed by Jeffrey D. Sachs. This team has also partnered up with Gallup, an American analytics and advisory company that is responsible for collecting all the worldwide survey responses for this dataset. The World Happiness Report for 2020 ranks 153 countries based on an average of three years of surveys between 2017 and 2019. The dataset contains data on 153 countries and their ladder score, logged GDP per capita, healthy life expectancy, perceptions of corruption, freedom to make life choices, social support, and generosity. The dataset also contained standard error and confidence intervals, but as they were measuring error of the ladder score, we did not use them in our analysis. 
+  For simplicity and ease of reading, ladder score was renamed to `ladder`, logged GDP per capita to `logged_GDP`, healthy life expectancy to ‘life_expectancy’, social support to `social_support`, freedom to make life choices to `freedom`, and perceptions of corruption to `corruption`. Below is a table of part of our data with the variables we used: 
+  
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+world_table <- world %>% 
+  mutate_at(vars(ladder, logged_GDP, social_support, life_expectancy, freedom, generosity,corruption), funs(round(., 2))) %>%
+  select(country, region, ladder, logged_GDP, social_support, life_expectancy, freedom, generosity, corruption) %>%
+  head(10)
+
+
+
+#formattable does not work when knit to PDF
+formattable(world_table)
+```
+
+```{r, echo=FALSE}
+#, list(
+  #ladder = color_tile("red", "red"),
+  #GDP= color_tile("orange", "orange"),
+  #social_support=color_tile("yellow","yellow"),
+  #life_expectancy=color_tile("green","green"),
+  #freedom=color_tile("lightblue", "lightblue"),
+  #generosity=color_tile("lightgreen","lightgreen"),
+  #corruption=color_tile("pink", "pink"))
+#list(
+  #ladder = color_tile("white", "orange"),
+  #GDP= color_bar("lightblue")
+#)
+```
+  
+  The ladder score, or also known as the happiness score or subjective well-being, is the national average of all the Gallup survey responses to the question, "Please imagine a ladder, with steps numbered from 0 at the bottom to 10 at the top. The top of the ladder represents the best possible life for you and the bottom of the ladder represents the worst possible life for you. On which step of the ladder would you say you personally feel you stand at this time?” Logged GDP per capita is the statistics of GDP per capita in purchasing power parity (PPP) at constant 2011 international dollar prices, which is then logged. Social support is the national average of the binary responses (either 0 or 1, with 0 meaning "no" and 1 meaning "yes") to the Gallup World Poll question, “If you were in trouble, do you have relatives or friends you can count on to help you whenever you need them, or not?” Healthy life expectancy from birth is based on the data from the World Health Organization (WHO) data repository. Freedom to make life choices is defined as the national average of the binary responses to the Gallup World Poll question, “Are you satisfied or dissatisfied with your freedom to choose what you do with your life?” Generosity is the residual of regressing national average in response to the Gallup World Poll question, “Have you donated money to a charity in the past month?” on GDP per capita. Finally, perceptions of corruption is the national average of responses to the questions, “Is corruption widespread throughout the government or not” and “Is corruption widespread within businesses or not?” These survey responses were conducted through a sample of around 3,000 people for each country, and were then applied to the population. Below is a map displaying ladder score across the world. 
+  
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+j <- left_join(world, location) %>%
+  select(-usa_state_code, -country_code, -usa_state_latitude, -usa_state_longitude, -usa_state)
+
+j %>% ggplot(aes(x=longitude, y= latitude, color = ladder)) +
+    borders(
+  database = "world",
+  regions = ".",
+  fill = NA,
+  colour = "grey50",
+  xlim = NULL,
+  ylim = NULL
+  ) + geom_point() +
+    coord_quickmap() + scale_color_gradientn(colours = rainbow(5)) + ggtitle("Ladder Score Across the World")
+```
+  
+The World Happiness dataset was also joined with a dataset that contained longitudes and latitudes for all the countries in the world in order to help visualize the pattern of happiness. The dataset, titled, "Latitude and Longitude for Every Country and State" is from Kaggle, although the original data was compiled by Google.
+
+Additionally, to answer our second question, data about median household incomes for each country were scrapped from a website called World Population Review and joined with the World Happiness 2020 dataset. The dataset is titled "Median Income by Country 2021". The original data came from Gallup World Poll surveys. The median income is a number that comes from the middle of the nation’s income distribution. In other words, half of the nation’s adult residents have disposable income that is higher than the listed values, while the other half has disposable income that falls below that value. We only used two variables from this dataset, "medianHouseholdIncome" and "country". The data collected for the median household income was self-reported from a sample of about roughly 3,000 people and then applied to the population, much like the other Gallup World Poll survey question results. However, there were only 131 countries in this data, so when joined with the World Happiness 2020 dataset, some countries did not have a median household income value. To combat this we manually filled out those missing values by researching what the median household income of each missing country was. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+median <- median %>% select(country, medianHouseholdIncome)
+
+median_table <- median %>% 
+  mutate_at(vars(medianHouseholdIncome), funs(round(., 2))) %>%
+  select(country, medianHouseholdIncome) %>%
+  head(10)
+
+#formattable does not work when knit to PDF
+formattable(median_table)
+```
+
+# RESULTS
+
+```{r, include=FALSE, message=FALSE, warning=FALSE}
+set.seed(200)
+sample_size = round(nrow(world_data)*.80)
+index <- sample(seq_len(nrow(world_data)), size = sample_size)
+train <- world_data[index, ]
+test <- world_data[-index, ]
+
+none = lm(ladder~1, data = train)
+  
+  Full = lm(ladder~logged_GDP + social_support+ life_expectancy + freedom + generosity + corruption, data = train) 
+  
+  MSE=(summary(Full)$sigma)^2
+  step(none,scope=list(upper=Full),scale=MSE, trace=FALSE)
+  
+#MODEL GENERATION
+  #Model - Life Expectancy 
+  mod1 = lm(ladder~ life_expectancy, data=train)
+
+  MODEL1 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$life_expectancy
+  }
+  MSE1=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL1(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE1 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL1(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+onemse <- MSE1(test, c(-2.145675, 0.119242 ))
+onemae<- optim(c(-2.145675, 0.119242), fn = MAE1, DATA =test)
+
+ #model GDP 
+  mod2 = lm(ladder~logged_GDP, data=train)
+
+  MODEL2 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$logged_GDP
+  }
+  MSE2=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL2(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE2 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL2(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+ twomse<- MSE2(test, c(-1.09350 , 0.70907))
+ twomae<- optim(c(-1.09350,0.70907), MAE2, DATA =test)
+ 
+ #Model - Social Support 
+  mod3 = lm(ladder~ social_support, data=train)
+
+  MODEL3 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$social_support
+  }
+  MSE3=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL3(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE3 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL3(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+  
+ threemse<- MSE3(test, c(-0.3725 , 7.2591))
+ threemae<- optim(c(-0.3725 , 7.259), MAE3, DATA =test)
+ 
+   #Model - corruption 
+  mod4 = lm(ladder~ corruption, data=train)
+
+  MODEL4 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$corruption
+  }
+  MSE4=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL4(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE4 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL4(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+  
+ fourmse<- MSE4(test, c(7.8818 , -3.2046 ))
+ fourmae<- optim(c(7.8818 , -3.2046), MAE4, DATA =test)
+ 
+ #Model - Freedom 
+  mod5 = lm(ladder~ freedom, data=train)
+
+  MODEL5 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$freedom
+  }
+  MSE5=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL5(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE5 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL5(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+  
+ fivemse<- MSE5(test, c(0.6758  , 6.2170 ))
+ fivemae<- optim(c(0.6758  , 6.2170), MAE5, DATA =test)
+ 
+  #Model - generosity 
+  mod6 = lm(ladder~ generosity, data=train)
+
+  MODEL6 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$generosity
+  }
+  MSE6=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL6(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE6 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL6(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+  
+ sixmse<- MSE6(test, c(5.57675  , 1.37066 ))
+ sixmae<- optim(c(5.57675  , 1.37066), MAE6, DATA =test)
+ 
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Model - GDP+life_expectancy 
+  
+  mod7 = lm(ladder~logged_GDP+life_expectancy, data=train)
+
+  MODEL7 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$logged_GDP + COEF[3]*DATA$life_expectancy
+  }
+  MSE7=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL7(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE7 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL7(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+  
+sevenmse<-  MSE7(test, c(-2.24939, 0.33644, 0.07200 ))
+ sevenmae<- optim(c(-2.24939, 0.33644, 0.07200 ), MAE7, DATA =test)
+ 
+ #Model - GDP+social_support
+  
+  mod8 = lm(ladder~logged_GDP+social_support, data=train)
+
+  MODEL8 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$logged_GDP + COEF[3]*DATA$social_support
+  }
+  MSE8=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL8(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE8 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL8(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+  
+ eightmse<- MSE8(test, c(-1.55703, 0.42764, 3.79890 ))
+ eightmae<- optim(c(-1.55703, 0.42764, 3.79890), MAE8, DATA =test)
+ 
+ #Model - GDP+life_expectancy+social_support
+  
+  mod9 = lm(ladder~logged_GDP+life_expectancy+social_support, data=train)
+
+  MODEL9 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$logged_GDP + COEF[3]*DATA$life_expectancy+ COEF[4]*DATA$social_support
+  }
+  MSE9=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL9(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE9 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL9(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+  
+ ninemse<- MSE9(test, c(-2.43245 , 0.16801, 0.05947, 3.14917))
+ ninemae<- optim(c(-2.43245 , 0.16801, 0.05947, 3.14917), MAE9, DATA =test)
+ 
+  #Model - GDP+life_expectancy+social_support+freedom
+  
+  mod10 = lm(ladder~logged_GDP+life_expectancy+social_support+freedom, data=train)
+
+  MODEL10 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$logged_GDP + COEF[3]*DATA$life_expectancy+ COEF[4]*DATA$social_support + COEF[5]*DATA$freedom
+  }
+  MSE10=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL10(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE10 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL10(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+  
+tenmse<-  MSE10(test, c(-3.21582 , 0.16085, 0.04962, 2.16618, 2.91554))
+tenmae<-  optim(c(-3.21582 , 0.16085, 0.04962, 2.16618, 2.91554), MAE10, DATA =test)
+
+ #Model - ladder~GDP+life_expectancy+freedom
+  
+  mod11 = lm(ladder~logged_GDP+life_expectancy+freedom, data=train)
+
+  MODEL11 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$logged_GDP + COEF[3]*DATA$life_expectancy + COEF[4]*DATA$freedom
+  }
+  MSE11=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL11(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE11 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL11(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+  
+elevenmse<-  MSE11(test, c(-3.19196 , 0.26946  , 0.05657, 3.26956))
+elevenmae<-  optim(c(-3.19196 , 0.26946  , 0.05657, 3.26956), MAE11, DATA =test)
+
+ #Model -life_expectancy+social_support
+  
+  mod12 = lm(ladder~life_expectancy+social_support, data=train)
+
+  MODEL12 = function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$life_expectancy + COEF[3]*DATA$social_support
+  }
+  MSE12=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL12(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE12 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL12(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+  
+ twelvemse<- MSE12(test, c(-2.42337  , 0.07648  , 3.72152))
+ twelvemae<- optim(c(-2.42337  , 0.07648  , 3.72152), MAE12, DATA =test)
+ 
+ #Model -GDP + life_expectancy+social_support + corruption
+  
+  mod13 = lm(ladder~logged_GDP + life_expectancy+social_support + corruption, data=train)
+
+  MODEL13= function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$logged_GDP +COEF[3]*DATA$life_expectancy + COEF[4]*DATA$social_support + COEF[5]*DATA$corruption
+  }
+  MSE13=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL13(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE13 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL13(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)
+  }
+  
+thirteenmse<- MSE13(test, c(-0.36063, 0.11253, 0.04887, 3.36435, -1.43797))
+thirteenmae<- optim(c(-0.36063, 0.11253, 0.04887, 3.36435, -1.43797), MAE13, DATA =test)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#model formed from stepwise regression
+  mod14 = lm(formula = ladder ~ life_expectancy + freedom + social_support + 
+    corruption, data = train)
+   MODEL14= function(DATA, COEF) {
+    COEF[1] + COEF[2]*DATA$life_expectancy +COEF[3]*DATA$freedom + COEF[4]*DATA$social_support + COEF[5]*DATA$corruption
+  }
+  MSE14=function(DATA, COEF){
+   ERROR = DATA$ladder - MODEL14(DATA, COEF)
+    LOSS = mean(ERROR^2)
+  return(LOSS)
+}
+  MAE14 = function(DATA, COEF) {
+    ERROR = DATA$ladder - MODEL14(DATA, COEF)
+    LOSS = mean(abs(ERROR))
+    return(LOSS)}
+fourteenmse<-MSE14(test, c(-1.60226,0.05670,2.32914, 2.93510,-1.00592))
+fourteenmae<-optim(c(-1.60226,0.05670,2.32914, 2.93510,-1.00592), MAE14, DATA =test)
+```
+
+To answer our first question of “What are the most significant predictors of happiness?”, we first decided to form a total of 14 different models to help us understand which predictors are most significant in predicting happiness. The predictors we used in our models from the data were: “Healthy Life Expectancy”, “Logged GDP”, “Social Support”, “Generosity”, “Freedom” and “Perceptions of Corruption''. Models 1 through 6 all have one predictor each. In these models there is a model for each of the 6 predictors listed above. We then made various combinations of these 6 predictors to form the rest of the 14 models. 
+
+We decided to include logged GDP in a good amount of the models because we felt logged GDP is usually a good indicator of a country's economy and therefore thought it might be a good predictor. We also included healthy life expectancy in a lot of the models because usually healthy life expectancy is a good indication on how developed a country is. Therefore, we felt this could be a good predictor for happiness. Model 14 is interesting, however,  in that we actually ran a step-wise regression with all 6 of the predictors predicting ladder score and the model that came out of this is our 14th model(mod14).  
+
+The models we chose were: 
+
+* mod1: ladder ~ Life Expectancy
+* mod2: ladder ~ logged GDP
+* mod3: ladder ~ Social Support
+* mod4: ladder ~ Corruption
+* mod5: ladder ~ Freedom
+* mod6: ladder ~ Generosity
+* mod7: ladder ~ logged GDP + Life Expectancy
+* mod8: ladder ~ logged GDP + Social Support
+* mod9: ladder ~ logged GDP +  Life Expectancy, and Social Support
+* mod10: ladder ~ logged GDP + Life Expectancy + Social Support + Freedom
+* mod11: ladder ~ logged GDP + Life Expectancy + Freedom
+* mod12: ladder ~ Life Expectancy + Social Support
+* mod13: ladder ~ logged GDP + Life Expectancy + Social Support + Corruption
+* mod14: ladder ~ Life Expectancy + Freedom + Social Support + Corruption
+
+
+We started off by finding the mean standard error (MSE) and mean absolute error (MAE) for each model and compared the models to find which had the lowest MSE and which had the lowest MAE. In finding the MSE and MAE for each model we randomly split our data into 80% for training data and 20% for testing data. To display the results of our findings we made a clustered bar chart of the MSE and MAE values for each model. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+MSEvec <- c(onemse,twomse,threemse,fourmse,fivemse,sixmse,sevenmse,eightmse,ninemse,tenmse,elevenmse,twelvemse,thirteenmse,fourteenmse)
+MAEvec <- c(onemae,twomae,threemae,fourmae,fivemae,sixmae,sevenmae,eightmae,ninemae,tenmae,elevenmae,twelvemae,thirteenmae,fourteenmae$value)
+
+df = data.frame(  
+  "Models" = c("mod1","mod2","mod3","mod4","mod5","mod6","mod7","mod8","mod9","mod10","mod11","mod12","mod13","mod14"),
+  "MAE" = c(round(onemae$value,2),round(twomae$value,2),round(threemae$value,2),round(fourmae$value,2),round(fivemae$value,2),round(sixmae$value,2),round(sevenmae$value,2),round(eightmae$value,2),round(ninemae$value,2),round(tenmae$value,2),round(elevenmae$value,2),round(twelvemae$value,2),round(thirteenmae$value,2),round(fourteenmae$value,2)),
+  "MSE" = c(round(onemse,2),round(twomse,2),round(threemse,2),round(fourmse,2),round(fivemse,2),round(sixmse,2),round(sevenmse,2),round(eightmse,2),round(ninemse,2),round(tenmse,2),round(elevenmse,2),round(twelvemse,2),round(thirteenmse,2),round(fourteenmse,2)),
+  "Predictors" = c(1,1,1,1,1,1,2,2,3,4,3,2,4,4)
+  
+) 
+
+#df
+
+#formattable does not work in PDF
+#formattable(df, list(MSE = formatter("span",style = ~ style(color = ifelse(MSE < 0.3, "darkorange", NA))), MAE = formatter("span", style = ~style(color = ifelse(MAE < 0.378, "darkorange",NA))), Models = formatter("span",style = ~style(color = ifelse(MAE<0.378 |MSE <0.3, "darkorange", NA)))))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Bargraph with models##
+
+df5<- df %>%
+pivot_longer(cols = c(MSE:MAE), names_to = "type",values_to = "value")
+
+df5$Models<-factor(df5$Models,levels = c("mod1","mod2","mod3","mod4","mod5","mod6","mod7","mod8","mod9","mod10","mod11","mod12","mod13","mod14"))
+ggplot(df5, aes(Models, value)) + 
+  geom_col(aes(fill = type), position = "dodge") + theme(axis.text.x = element_text(angle=45, hjust = 1)) + ggtitle("MSE and MAE for all Models")
+```
+
+  
+In comparing the MSE and MAE values found for the models, we discovered that mod8 and mod9 had the lowest MSE (0.26) and MAE (0.37) respectively and therefore were chosen as the two models with the highest accuracy. Mod8’s variables were logged GDP and social_support, while mod9’s variables were logged GDP, social support, and healthy life expectancy. Interestingly enough, mod3 which had only one predictor (social support) contained both the lowest MAE and MSE of all the single predictor models (0.43 and 0.36 respectively). These values were higher than that of mod8 and mod9 which could be due to mod8 and mod9 having more than one predictor. This could also be because mod8 and mod9 contained logged GDP which was the second most single influential variable since mod2, which had logged GDP as a single predictor, had the second smallest MSE/MAE values. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Creation of Test/Train data and graph of mod8##
+
+library(modelr)
+test2 <- test %>%
+  add_predictions(mod8, var = "Predictions") %>%
+  add_residuals(mod8, var = "mod8_resid")
+type<- c("test")
+testdata<- cbind(test2, type)
+
+
+train2 <- train %>%
+  add_predictions(mod8, var = "Predictions") %>%
+  add_residuals(mod8, var = "mod8_resid")
+
+
+test3<- test %>%
+    add_predictions(mod9, var = "Predictions") %>%
+  add_residuals(mod9, var = "mod9_resid")
+
+train3 <- train %>%
+  add_predictions(mod9, var = "Predictions") %>%
+  add_residuals(mod9, var = "mod9_resid")
+
+
+Train <- "blue"
+Test <- "orange"
+
+
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#cross validation using location(region)
+##RMSE by Region##
+
+NEST.DATA = world_data %>% group_by(region) %>% nest()
+DATA2=world_data 
+DATA2$linpred=NA
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~freedom, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+
+
+RMSE.func=function(actual,predict){
+  mse=mean((actual-predict)^2,na.rm=T)
+  rmse=sqrt(mse)
+  return(rmse)
+}
+
+rmse1 <- RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~generosity, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse2<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~logged_GDP, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse3<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~corruption, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse4<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~social_support, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse5<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~life_expectancy, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse6<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~logged_GDP+life_expectancy, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse7<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~logged_GDP+social_support, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse8<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~logged_GDP+social_support + life_expectancy, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse9<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~logged_GDP+social_support + life_expectancy + freedom, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse10<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~logged_GDP+life_expectancy+freedom, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse11<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+##doesn't match up with a mod as listed before
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~logged_GDP + corruption + generosity, data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse12<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~life_expectancy + social_support  , data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse13<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+linmod=lm(ladder~logged_GDP + life_expectancy+social_support + corruption , data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse14<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+```
+
+```{r, include=FALSE, message=FALSE, warning=FALSE}
+#stepwise
+for(k in unique(DATA2$region)){
+TEST = NEST.DATA %>% filter(region==k) %>%
+unnest(cols = c(data))
+TRAIN = NEST.DATA %>% filter(region!=k) %>%
+unnest(cols = c(data))
+
+linmod=lm(ladder~life_expectancy + freedom + social_support + 
+    corruption , data=TRAIN) 
+linmodpred=predict(linmod,newdata=TEST)
+DATA2$linpred[which(DATA2$region==k)]=linmodpred 
+}
+rmse15<-RMSE.func(actual=DATA2$ladder,predict=DATA2$linpred)
+```
+
+We felt one modeling technique was not enough, so another technique we utilized was cross validation, but in a different way. Instead of splitting up the data into 80% train and 20% test, we split up the data by region. So the training data would be all of the countries except the countries in one particular region and the testing data would be the one region that was left out. This was done for every region which means every region became a test set. The data was split up like this for every model. We then took the root mean squared error (RMSE) for each model to find the model that had the lowest RMSE. Below is a graphical representation of the RMSE for each model. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Table of RMSE values##
+
+RMSEdf = data.frame(  
+  "Models" = c("mod1", "mod2", "mod3","mod4","mod5", "mod6","mod7","mod8","mod9","mod10", "mod11", "mod12", "mod13", "mod14"),
+  "RMSE" = c(round(rmse6,2),round(rmse3,2),round(rmse5,2),round(rmse4,2),round(rmse1,2),round(rmse2,2),round(rmse7,2),round(rmse8,2),round(rmse9,2),round(rmse10,2),round(rmse11,2),round(rmse13,2),round(rmse14,2),round(rmse15,2)) )
+orange_pal <- function(x) rgb(colorRamp(c("#ffe4cc", "#ff9500"))(x), maxColorValue = 255)
+
+RMSEdf$Models<-factor(RMSEdf$Models,levels = c("mod1","mod2","mod3","mod4","mod5","mod6","mod7","mod8","mod9","mod10","mod11","mod12","mod13","mod14"))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(RMSEdf, aes(Models, RMSE)) + 
+  geom_col(position = "dodge") + ggtitle("RMSE for all Models")
+#formattable(RMSEdf, list(RMSE = formatter("span",style = ~ style(color = ifelse(RMSE < 0.68, "darkorange", NA))), Cross.Validation = formatter("span", style = ~style(color = ifelse(RMSE < 0.68, "darkorange",NA)))))
+```
+
+We found the model with the lowest RMSE value (0.68) to be mod 11. This model utilized the variables logged GDP, social support, and freedom. Using the 3 models we found we plotted the actual ladder score values against the predicted ladder score values from each model.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Creation of test/train data and graph by region for mod8 and mod11##
+
+
+test3$Type <- "test"
+train3$Type <- "train"
+
+test2$Type <- "test"
+train2$Type <- "train"
+
+
+TEST2 <- test %>%
+  add_predictions(mod11, var = "Predictions") %>%
+  add_residuals(mod11, var = "mod11_resid")
+
+TRAIN2 <- TRAIN %>%
+  add_predictions(mod11, var = "Predictions") %>%
+  add_residuals(mod11, var = "mod11_resid")
+
+Train <- "blue"
+Test <- "orange"
+
+
+
+ggplot() +
+  geom_point(data = train2, aes(ladder, Predictions, shape = Type, color = region), size = 3) +
+  geom_point(data = test2, aes(ladder, Predictions, shape = Type, color = region), size = 3) +
+         
+    ylab("Predicted Ladder Scores")+
+  xlab("Actual Ladder Scores")+
+  ggtitle("Mod8: Actual vs. Predictions")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  guides(col=guide_legend("Region"))+
+  geom_segment(aes(x=2.5, y=3, xend=7.5,yend= 7), color = "black", size = 1) 
+
+ggplot() +
+  geom_point(data = train3, aes(ladder, Predictions, shape =Type, color = region), size = 3) +
+  geom_point(data = test3, aes(ladder, Predictions, shape=Type, color = region), size = 3) +
+        
+  ggtitle("Mod9: Actual vs. Predictions")+
+      ylab("Predicted Ladder Scores")+
+  xlab("Actual Ladder Scores")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  guides(col=guide_legend("Region"))+
+  geom_segment(aes(x=2.5, y=3, xend=7.5,yend= 7), color = "black", size = 1)
+```
+
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot() +
+  geom_point(data = TRAIN2, aes(ladder, Predictions, color = region)) +
+  geom_point(data = TEST2, aes(ladder, Predictions, color = region)) +
+    ylab("Predicted Ladder Scores")+
+  xlab("Actual Ladder Scores")+
+  ggtitle("Mod11: Actual vs. Predictions")+
+    guides(col=guide_legend("Region"))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_segment(aes(x=2.5, y=3, xend=7.5,yend= 7.25), color = "black", size = 1) 
+
+```
+
+For all of the models we colored the points by region, but for the models with the lowest MSE and MAE we identified the test and train data by shape. You can see in all three graphs there is a very strong positive correlation between the actual and predicted ladder score values indicating that the predictions of these models are very accurate. After comparing these models, we found that all three had logged GDP, two of the three had healthy life expectancy and two of the three had social support. Therefore, we deemed logged GDP, social support, and healthy life expectancy to be the most significant factors to observe when looking to predict and improve a country’s ladder or happiness score.
+
+
+
+Our second question was, “Can median household income predict the ladder score, logged GDP, healthy life expectancy, and/ or social support and does it relate to each region?”. When we took the top 20 happiest and top 20 unhappiest countries, based on ladder score, we found that most of the top happiest countries are in the region Western Europe and most of the unhappiest countries are in the region Sub-Saharan Africa. So, we wanted to further explore the data to see what the median household income looks like in each region.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Q2 code
+
+median <-median  %>% select(country, medianHouseholdIncome)
+median_data = left_join(world_data,  median, by = c( "country" = "country"))
+means <- median_data  %>% 
+  group_by(region) %>%
+  summarise(n=n(),mean=mean(medianHouseholdIncome, na.rm=TRUE),se=sd(medianHouseholdIncome)/sqrt(n),
+            lb=mean-2*se,ub=mean+2*se,.groups='drop') 
+
+median_data[25, 10] = 32762
+median_data[49, 10] = 6679
+median_data[78, 10] = 35443
+median_data[88, 10] = 2106
+median_data[131, 10] = 1988
+
+median_data <- left_join(median_data, location) %>%
+  select(-usa_state_code, -country_code, -usa_state_latitude, -usa_state_longitude, -usa_state)
+
+median_data %>% ggplot(aes(x=longitude, y= latitude, color = medianHouseholdIncome)) +
+    borders(
+  database = "world",
+  regions = ".",
+  fill = NA,
+  colour = "grey50",
+  xlim = NULL,
+  ylim = NULL
+  ) + geom_point() +
+    coord_quickmap() + scale_color_gradientn(colours = rainbow(5))+labs(color="MHI") + ggtitle("Median Household Income Across the World")
+
+
+bar_mean_region <- ggplot(means, aes(x=mean, y = region)) + geom_bar(stat='identity') + ggtitle("Average Median Household Income by Region")
+bar_mean_region
+
+```
+
+We used "MHI" to stand for median household income in the legend for our map graph. As you can see, most of the countries in Sub-Saharan Africa have a lower median household income whereas Western Europe, which had the highest amount of the top happiest countries, had an overall higher median household income when compared to the other regions. You can see from the bar graph that the regions North American and ANZ along with Western Europe had the two highest mean median household incomes, which is interesting as those countries are more developed. Now that we have a better idea of median household income across the world, to answer whether it can predict logged GDP, social support and healthy life expectancy logged GDP, we first created 4 linear models. These models had median household income predicting logged GDP, ladder score, healthy life expectancy and social support. The relationship between the variables, however, did not look linear when graphed and was even more evident in the low adjusted R-squared values from the 4 models. To combat this we logged the median household income in all 4 models and this increased the adjusted R-squared significantly. The adjusted R-squared went from 0.4905 to 0.7081 for the model predicting healthy life expectancy, 0.3295  to 0.5574 for the model predicting social support, 0.518 to 0.5913 for the model predicting ladder score and 0.5849 to 0.8128 for the model predicting logged GDP. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(median_data) + 
+  geom_point(aes(x=medianHouseholdIncome, y =logged_GDP , col = social_support, size = life_expectancy)) + geom_smooth(aes(x=medianHouseholdIncome, y = logged_GDP)) + scale_color_gradientn(colours = rainbow(5)) + xlab("Median Household Income")+
+  ylab("Logged GDP") + ggtitle("Median Household Income vs. Logged GDP")
+
+ggplot(median_data) + 
+  geom_point(aes(x=log(medianHouseholdIncome), y =logged_GDP , col = social_support, size = life_expectancy)) + geom_smooth(aes(x=log(medianHouseholdIncome), y = logged_GDP)) + scale_color_gradientn(colours = rainbow(5)) + xlab("Logged Median Household Income")+
+  ylab("Logged GDP") + ggtitle("Logged Median Household Income vs. Logged GDP")
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(median_data) + 
+  geom_point(aes(x=medianHouseholdIncome, y =ladder , col = region, size = life_expectancy)) + geom_smooth(aes(x=medianHouseholdIncome, y = ladder)) + xlab("Median Household Income")+
+  ylab("Ladder Score") + ggtitle("Median Household Income vs. Ladder Score")
+
+ggplot(median_data) + 
+  geom_point(aes(x=log(medianHouseholdIncome), y =ladder , col = region, size = life_expectancy)) + geom_smooth(aes(x=log(medianHouseholdIncome), y = ladder)) + xlab("Logged Median Household Income")+
+  ylab("Ladder Score") + ggtitle("Logged Median Household Income vs. Ladder Score")
+
+#looked at the adjusted r^2 and it was low so we logged the predictor (median household incomde and got a better r^2??)
+modMedian = lm(life_expectancy~log(medianHouseholdIncome), data = median_data)
+#summary(modMedian)
+
+modMedian = lm(life_expectancy~(medianHouseholdIncome), data = median_data)
+#summary(modMedian)
+
+modMedian_s = lm(logged_GDP~log(medianHouseholdIncome), data = median_data)
+#summary(modMedian_s)
+
+modMedian_s = lm(logged_GDP~(medianHouseholdIncome), data = median_data)
+#summary(modMedian_s)
+
+modMedian_s = lm(social_support~log(medianHouseholdIncome), data = median_data)
+#summary(modMedian_s)
+
+modMedian_s = lm(social_support~(medianHouseholdIncome), data = median_data)
+#summary(modMedian_s)
+
+modMedian_s = lm(ladder~log(medianHouseholdIncome), data = median_data)
+#summary(modMedian_s)
+#0.518 
+#0.5913 
+#plot(modMedian_s, 1)
+
+#ggplot(median_data, aes(x=medianHouseholdIncome)) + 
+ # geom_histogram(binwidth=5000) + facet_wrap(~region)
+
+
+#ggplot(means, aes(x=region, y = mean)) + geom_point() +coord_flip()
+
+#ggplot(means, aes(x=region, y = mean)) + geom_bar()
+
+#filter out countries above a certain benchmark - above a certain threshold it's maybe a good predictor 
+```
+
+
+From the first graph above you can see as median household income increases, the logged GDP increases. It increases rapidly when median household goes from $0 to $10,000, and then you can later see as median household income gets to those higher values around $30,000 and above, logged GDP also starts hitting higher values not previously seen. The healthy life expectancy also increases as you can see the dots start to get larger as median household income increases. The social support also increases as median household income increases as you can see it go from green, which corresponds to lower social support to purple which corresponds to a higher social support value. As the median household income exceeds $10,000, the graph starts to level out. Having more money seems to become less meaningful than before. In the second graph, we logged median household income to make the relationship more linear. This makes sense to do especially since it's being plotted against a GDP that's already logged. 
+
+In the third graph above we are now plotting median household income against ladder score and made the color of the points correlate to the region. You can see that Sub-Saharan African countries have a lower median household income along with a lower ladder score, and healthy life expectancy. You can then see that the Western European countries have a higher logged GDP and healthy life expectancy. In the fourth graph we again logged median household income to show a more linear relationship. 
+
+Overall, we can see from the analysis of the plots and the adjusted R-squared values of the linear models that the median household income looks like a good predictor for ladder score, logged GDP, healthy life expectancy and social support. As median household increases, ladder score, logged GDP, healthy life expectancy and social support all increase as well. There is also a clear difference in the median household income between each region. The more developed countries seem to have a higher median household income which is interesting because these countries also have a higher ladder score. So it looks like there's strong evidence to support that money really can buy happiness. 
+
+# CONCLUSION
+
+Our first goal was to answer the question of which variables would be the best predictors of happiness. Through various modeling techniques we narrowed our variables down to logged GDP, social support, and healthy life expectancy as the most significant predictors of a country’s happiness (ladder) score. It can be difficult to know how to best aid one’s country as a leader, as there are so many factors and so little time and money. By identifying these variables as the primary targets for a country's happiness, a leader’s worries of how to best focus their efforts is eliminated. Several avenues that these leaders could apply their efforts based on these variables are: reforming health care and access to quality living necessities, producing more goods and services, decreasing unemployment, increasing social events, and creating better platforms for communication and information. We expected logged GDP and healthy life expectancy to be quite significant predictors due to how influential they are in a country's well being and determining how developed or undeveloped a country is. The other variable that showed up as being an important predictor was social support. This was quite interesting in that there have actually been many studies done on how people who perceive their family or friends to be supportive tend to be happier. There have also been studies done on how social connections in general can boost happiness, whether in daily life or in general.  Happiness is probably the most key thing people strive for in life which is what makes the investigation of, what makes the people in a country happier, all the more valuable. 
+
+There is much room for additional investigation such as observing whether access to technological developments, a country’s landscape, culture, average stress levels or average work hours, would influence how happiness is determined or predicted. We didn’t have access to data on average stress levels for all the countries in our data set, and the data that was available was surveyed in 2012 which was more outdated than we wanted. It could also be interesting to see how external factors such as climate or natural disasters affect the happiness score of a country. There are a variety of variables that could be influencing how happy someone is which gives a plethora of room for further investigation. There are so many factors that weren’t considered that we could be missing out on that may better predict happiness. Some methods we did not use that could have been better include creating and analyzing plots of the residuals and looking at Cook's Distance for the different models. Creating even more models with different combination of the predictors or interactions between the predictors could also help increase the accuracy of finding the best model to predict happiness. 
+
+Our second goal was to answer the question, “Can median household income predict the ladder score, logged GDP, healthy life expectancy, and/ or social support and does it relate to each region?”. We came to the conclusion that median household income can predict these variables. When median household increases, ladder score, logged GDP, healthy life expectancy, and social support all increase. We also did see a relation with median household income and region with more developed regions such as Western Europe and North American and ANZ having higher median household incomes and regions such as Sub-Saharan Africa having lower median household incomes. In the first question we narrowed down the the most important predictors for happiness to logged GDP, healthy life expectancy and social support. So, finding that median household income can predict these variables is really valuable because when world leaders are trying to figure out how to improve predictors such as logged GDP, social support and life expectancy they now know that finding ways to increase median household income could do all three thus increasing ladder score indirectly. These results are worth investigating further since the median household income shows the worth of individual wealth, rather than simply focusing on the wealth of the country alone. For example, even though a country may have a high GDP per capita, the wealth gap between the rich and poor may result in lower happiness across the country, despite the correlation GDP has with the ladder score. Countries may look into further supplementing government programs for those below the poverty line, or investing in long-term factors that generate higher average income, a prime example being education.  
+
+Using median household income to investigate happiness is merely a starting point for the wide variety of variables that could go into refining the happiness model, examples of which were stated earlier. Literacy rate, however, may go particularly well with median household income as a way to measure education, which could answer how education affects median household income, which in turn affects GDP and happiness. Other ways to improve our modeling techniques include investigating multicollinearity, since GDP per capita and median household income still deals with money, although they are on different scales. Likewise, narrowing down an accurate model with the lowest RMSE using external variables outside the dataset may serve to improve our analysis. However, the variables we have identified currently provide great guidance for how a country can seek to improve its happiness. 
