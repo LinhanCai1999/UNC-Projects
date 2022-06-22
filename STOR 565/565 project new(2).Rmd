@@ -1,0 +1,237 @@
+---
+title: "565 project new"
+author: "Han Bao"
+date: "4/24/2022"
+output: html_document
+---
+```{r}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(tree)
+library(keras)
+library(dplyr)
+library(e1071)
+library(caret)
+library(MASS)
+library(class)
+library(glmnet)
+library(pROC)
+library(ROCR)
+```
+
+```{r}
+test<-read.csv("test.csv")
+train<-read.csv("train.csv")
+```
+
+```{r}
+
+test<-read.csv("test.csv")
+train<-read.csv("train.csv")
+train=train[ c(3:22,25:29)]
+test=test[  c(3:22,25:29)]
+pr.out <- prcomp(train, scale = TRUE)
+#pr.out$rotation
+```
+```{r}
+pairs(pr.out$x[, 1:4], col = blues9,main="Pairwise scatterplots of each pair of pcs in PCA")
+
+scree = screeplot(pr.out, type = "lines", main = "Variance explained by PC")
+```
+
+```{r}
+pr.var <- pr.out$sdev^2
+pve = pr.var / sum(pr.var)
+plot(pve, xlab = "Principal Component", ylab = "Proportion of Variance Explained", ylim
+ = c(0,1), type = 'b')
+plot(cumsum(pve), xlab = "Principal Component", ylab = "Proportion of Variance Explained", ylim = c(0,1), type = 'b', main="Cumulative plot of proportion of variance explained")
+```
+```{r}
+library(devtools)
+install_github("vqv/ggbiplot")
+library(ggbiplot)
+ggbiplot(pr.out, labels=rownames(train))
+```
+
+
+```{r}
+test<-read.csv("test.csv")
+train<-read.csv("train.csv")
+train=train[ c(3:29)]
+test=test[ c(3:29)]
+qda1 <-qda(result ~., data = train) 
+qda.pred <- predict(qda1, newdata = test)
+confusion <- function(yhat, y, quietly = FALSE){
+if(!quietly)
+message("yhat is the vector of predicted outcomes, possibly a factor.\n
+Accuracy = ((first level predicted)+(second level predicted))  / (two level actual) \n
+Sensitivity = (first level predicted) / (first level actual) \n Specificity = (second level predicted) / (second level actual)")
+if(!is.factor(y) & is.factor(yhat)) 
+  y <- as.factor(y)
+if(!all.equal(levels(yhat), levels(y))) 
+  stop("Factor levels of yhat and y do not match.")
+confusion_mat <- table(yhat, y, deparse.level = 2)
+stats <- data.frame(Accuracy=(confusion_mat[1, 1]+confusion_mat[2, 2])/(sum(confusion_mat[, 2])+sum(confusion_mat[, 1])), sensitivity = confusion_mat[1, 1]/sum(confusion_mat[, 1]),
+specificity = confusion_mat[2, 2]/sum(confusion_mat[, 2]))
+return(list(confusion_mat = confusion_mat, stats = stats)) 
+}
+qda1 <-qda(result ~., data = train) 
+qda.pred <- predict(qda1, newdata = test)
+confusion(yhat = qda.pred$class, y = test$result, quietly = FALSE)
+
+roc_logreg = roc(response = test$result,
+                 predictor =qda.pred$posterior[,2] ) 
+auc(roc_logreg)
+ggroc(roc_logreg)
+```
+```{r}
+lda1 <-lda(result ~., data = train) 
+lda.pred <- predict(lda1, newdata = test)
+confusion(yhat = lda.pred$class, y = test$result, quietly = FALSE)
+
+roc_logreg = roc(response = test$result,
+                 predictor =lda.pred$posterior[,2] ) 
+auc(roc_logreg)
+ggroc(roc_logreg)
+
+
+
+```
+
+```{r}
+# logistic regression 1   
+glm1=glm(result ~., data = train, family="binomial")
+```
+```{r}
+summary(glm1)
+```
+```{r}
+glm.pred <- predict(glm1, test, type="response")
+table(test$result, glm.pred>0.5)
+```
+```{r}
+accurancy=(65+91)/(65+91+48+49)
+accurancy
+```
+```{r}
+sensativity=65/(65+49)
+sensativity
+```
+```{r}
+specificity=91/(91+48)
+specificity
+```
+
+```{r}
+
+roc_logreg = roc(response = test$result,
+                 predictor =glm.pred) 
+auc(roc_logreg)
+ggroc(roc_logreg)
+```
+
+```{r}
+# second glm model
+glm2 <- glm(factor(result) ~ total_home_score + total_home_epa + total_away_epa + spread_line + home_result + away_result + home_win_percent + away_win_percent, data = train, family = binomial)
+summary(glm2)
+```
+
+```{r}
+glm.pred <- predict(glm2, test, type="response")
+table(test$result, glm.pred>0.5)
+```
+
+```{r}
+accurancy=(61+100)/(61+100+40+52)
+accurancy
+```
+```{r}
+sensativity=61/(61+40)
+sensativity
+```
+```{r}
+specificity=100/(52+100)
+specificity
+```
+
+```{r}
+roc_logreg = roc(response = test$result,
+                 predictor =glm.pred) 
+auc(roc_logreg)
+ggroc(roc_logreg)
+```
+
+
+```{r}
+# knn
+knn_models <- list()
+
+for (i in 1:10){
+knn_models[[i]] <- knn(train, test, cl = train$result, k = i)
+}
+knn_results <- lapply(knn_models, FUN = function(x){
+return(confusion(x,test$result, quietly = TRUE)$stats) })
+knn_results
+```
+
+```{r}
+knn(train, test, cl = train$result, k = 10)
+```
+
+```{r}
+#knn.pred <- predict(knn_models[1], test, type="response")
+```
+
+
+
+
+```{r}
+# NN
+x_train = model.matrix(result ~. -result, data=train)
+g_train <- train$result==1
+
+x_test <- model.matrix(result ~. -result, data=test)
+g_test <- test$result==1
+```
+
+```{r}
+modnn <- keras_model_sequential() %>% 
+  layer_dense(units=13, activation='relu', input_shape=ncol(x_train)) %>%
+  layer_dropout(rate=0.4) %>%
+  layer_dense(units = 1, activation='sigmoid')
+
+modnn %>% compile(
+  optimizer=optimizer_rmsprop(), 
+  loss='binary_crossentropy', 
+  metrics='accuracy')
+
+history <- modnn %>% fit(
+  x = x_train, 
+  y = g_train, 
+  epochs=30, 
+  batch_size=128)
+```
+
+
+```{r}
+nnpred <- predict(modnn, x_test) > 0.5
+nn.accuracy <- mean(nnpred == g_test)
+nn.accuracy
+```
+
+```{r}
+nn1.pred<-predict(modnn, x_test)
+roc_logreg = roc(response = test$result,
+                 predictor =glm.pred) 
+auc(roc_logreg)
+ggroc(roc_logreg)
+```
+
